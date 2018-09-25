@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>SlotGame</title>
+    <script src="pixi/pixi.min.js"></script>
+    <script src="jquery/jquery-3.3.1.min.js"></script>
+</head>
+<body>
+    <script>
+        // Get reel strip data.
+        $.getJSON('./gameConfig.json', function(data){
+            var gameConfig = [];
+            $.each(data, function( key, val ) {
+                gameConfig.push(val);
+            })
+            reelStrips = gameConfig[0];
+
+            var app = new PIXI.Application(800, 600, {backgroundColor : 0xbbffbb});
+            document.body.appendChild(app.view);
+
+            PIXI.loader
+                .add("alphabet_a", "assets/alphabet_a.png")
+                .add("alphabet_j", "assets/alphabet_j.png")
+                .add("alphabet_k", "assets/alphabet_k.png")
+                .add("alphabet_n", "assets/alphabet_n.png")
+                .add("alphabet_q", "assets/alphabet_q.png")
+                .add("alphabet_t", "assets/alphabet_t.png")
+                .load(onAssetsLoaded);
+
+            const REEL_WIDTH = 160;
+            const SYMBOL_SIZE = 150;
+
+            function onAssetsLoaded()
+            {
+                var slotTextures = [
+                    PIXI.Texture.fromImage("alphabet_a"),
+                    PIXI.Texture.fromImage("alphabet_j"),
+                    PIXI.Texture.fromImage("alphabet_k"),
+                    PIXI.Texture.fromImage("alphabet_n"),
+                    PIXI.Texture.fromImage("alphabet_q"),
+                    PIXI.Texture.fromImage("alphabet_t")
+                ];
+
+                //Build the Reels
+                var reels = [];
+                var reelContainer = new PIXI.Container();
+                for( var i = 0; i < 5; i++)
+                {
+                    var rc = new PIXI.Container();
+                    rc.x = i*REEL_WIDTH;
+                    reelContainer.addChild(rc);
+                    
+                    var reel = {
+                        container: rc,
+                        symbols:[],
+                        position:0,
+                        previousPosition:0,
+                        blur: new PIXI.filters.BlurFilter()
+                    };
+                    reel.blur.blurX = 0;
+                    reel.blur.blurY = 0;
+                    rc.filters = [reel.blur];
+                    
+                    //Build the symbols
+                    var randomShift = Math.floor(Math.random() * reelStrips[i].length);
+                    for(var j = 0; j < reelStrips[i].length; j++)
+                    {   
+                        var mapPos = mapSymbol(reelStrips[i][(j + randomShift) % reelStrips[i].length]);
+                        var symbol = new PIXI.Sprite(slotTextures[mapPos]);
+                        //Scale the symbol to fit symbol area.
+                        symbol.y = j*SYMBOL_SIZE;
+                        symbol.scale.x = symbol.scale.y = Math.min( SYMBOL_SIZE / symbol.width, SYMBOL_SIZE/symbol.height);
+                        symbol.x = Math.round((SYMBOL_SIZE - symbol.width)/2);
+                        reel.symbols.push(symbol);
+                        rc.addChild(symbol);
+                    }
+                    reels.push(reel);
+                }
+                app.stage.addChild(reelContainer);
+                
+                //Build top & bottom covers and position reelContainer
+                var margin = (app.screen.height - SYMBOL_SIZE * 3) / 2;
+                reelContainer.y = margin;
+                reelContainer.x = Math.round(app.screen.width - REEL_WIDTH * 5);
+                var top = new PIXI.Graphics();
+                top.beginFill(0x220088);
+                top.drawRect(0,0, app.screen.width, margin);
+                var bottom = new PIXI.Graphics();
+                bottom.beginFill(0xFF3333);
+                bottom.drawRect(0,SYMBOL_SIZE*3+margin,app.screen.width, margin);
+                
+                //Add play text
+                var style = new PIXI.TextStyle({
+                    fontFamily: 'Arial',
+                    fontSize: 36,
+                    fontWeight: 'bold',
+                    fill: '#ffffff',
+                    stroke: '#4a1850',
+                    strokeThickness: 5,
+                    dropShadow: true,
+                    dropShadowColor: '#000000',
+                    dropShadowBlur: 4,
+                    dropShadowAngle: Math.PI / 6,
+                    dropShadowDistance: 6,
+                    wordWrap: true,
+                    wordWrapWidth: 440
+                });
+                
+                var playText = new PIXI.Text('Spin', style);
+                playText.x = Math.round((bottom.width - playText.width)/2);
+                playText.y = app.screen.height-margin + Math.round((margin-playText.height) / 2);
+                bottom.addChild(playText);
+                
+                //Add header text
+                var headerText = new PIXI.Text('SLOTS GAME', style);
+                headerText.x = Math.round((top.width - headerText.width) / 2);
+                headerText.y = Math.round((margin - headerText.height) / 2);
+                top.addChild(headerText);
+                
+                app.stage.addChild(top);
+                app.stage.addChild(bottom);
+                
+                //Set the interactivity.
+                bottom.interactive = true;
+                bottom.buttonMode = true;
+                bottom.addListener("pointerdown", function(){
+                    startPlay();
+                });
+                
+                var running = false;
+                
+                //Function to start playing.
+                function startPlay(){
+                    if(running) return;
+                    running = true;
+                    
+                    for(var i = 0; i < reels.length; i++)
+                    {
+                        var r = reels[i];
+                        var extra = Math.floor(Math.random()*3);
+                        tweenTo(r, "position", r.position + 10+i*5+extra, 2500+i*600+extra*600, backout(0.6), null, i == reels.length-1 ? reelsComplete : null);
+                    }
+                }
+                
+                //Reels done handler.
+                function reelsComplete(){
+                    running = false;
+                }
+                
+                // Listen for animate update.
+                app.ticker.add(function(delta) {
+                    //Update the slots.
+                    for( var i = 0; i < reels.length; i++)
+                    {
+                        var r = reels[i];
+                        //Update blur filter y amount based on speed.
+                        //This would be better if calculated with time in mind also. Now blur depends on frame rate.
+                        r.blur.blurY = (r.position-r.previousPosition)*8;
+                        r.previousPosition = r.position;
+                        
+                        //Update symbol positions on reel.
+                        for( var j = 0; j < r.symbols.length; j++)
+                        {
+                            var s = r.symbols[j];
+                            var prevy = s.y;
+                            s.y = (r.position + j)%r.symbols.length*SYMBOL_SIZE-SYMBOL_SIZE;
+                            if(s.y < 0 && prevy > SYMBOL_SIZE){
+                                //Detect going over and swap a texture. 
+                                //This should in proper product be determined from some logical reel.
+                                var mapPos = mapSymbol(reelStrips[i][j]);
+                                s.texture = slotTextures[mapPos];
+
+                                s.scale.x = s.scale.y = Math.min( SYMBOL_SIZE / s.texture.width, SYMBOL_SIZE/s.texture.height);
+                                s.x = Math.round((SYMBOL_SIZE - s.width)/2);
+                            }
+                        }
+                    }
+                });
+            }
+
+            //Very simple tweening utility function. This should be replaced with a proper tweening library in a real product.
+            var tweening = [];
+            function tweenTo(object, property, target, time, easing, onchange, oncomplete)
+            {
+                var tween = {
+                    object:object,
+                    property:property,
+                    propertyBeginValue:object[property],
+                    target:target,
+                    easing:easing,
+                    time:time,
+                    change:onchange,
+                    complete:oncomplete,
+                    start:Date.now()
+                };
+                
+                tweening.push(tween);
+                return tween;
+            }
+            // Listen for animate update.
+            app.ticker.add(function(delta) {
+                var now = Date.now();
+                var remove = [];
+                for(var i = 0; i < tweening.length; i++)
+                {
+                    var t = tweening[i];
+                    var phase = Math.min(1,(now-t.start)/t.time);
+                    
+                    t.object[t.property] = lerp(t.propertyBeginValue, t.target, t.easing(phase));
+                    if(t.change) t.change(t);
+                    if(phase == 1)
+                    {
+                        t.object[t.property] = t.target;
+                        if(t.complete)
+                            t.complete(t);
+                        remove.push(t);
+                    }
+                }
+                for(var i = 0; i < remove.length; i++)
+                {
+                    tweening.splice(tweening.indexOf(remove[i]),1);
+                }
+            });
+
+            //Basic lerp funtion.
+            function lerp(a1,a2,t){
+                return a1*(1-t) + a2*t;
+            }
+
+            //Backout function from tweenjs.
+            //https://github.com/CreateJS/TweenJS/blob/master/src/tweenjs/Ease.js
+            backout = function(amount) {
+                    return function(t) {
+                        return (--t*t*((amount+1)*t + amount) + 1);
+                    };
+            };
+            
+            function mapSymbol(symbol){
+                switch(symbol){
+                    case 'A' : return 0; break;
+                    case 'J' : return 1; break;
+                    case 'K' : return 2; break;
+                    case 'N' : return 3; break;
+                    case 'Q' : return 4; break;
+                    case 'T' : return 5; break;
+                }
+            }                 
+        }); 
+    </script>
+</body>
+</html>
