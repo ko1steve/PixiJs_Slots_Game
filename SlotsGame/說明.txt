@@ -1,7 +1,0 @@
-程式說明：
-	以 jQuery 讀取 GameConfig 資料後，
-	載入資源，根據 GameConfig 資料作符號的 mapping，
-	同時產生亂數位移 ReelStrip 整體的符號位置。
-	個別 ReelStrip 位移量不同，整體順序不便。
-	
-	註：符號圖片為自製
